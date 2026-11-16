@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# gta6-clip skill working files
+work/
+*.mp4
+*.mov
+*.mkv
