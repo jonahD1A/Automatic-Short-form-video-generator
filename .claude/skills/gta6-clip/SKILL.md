@@ -11,9 +11,10 @@ you make the three editorial calls: **which moment, which hook, which layout**.
 All commands go through one script (`$S` = this skill's folder):
 
 ```bash
-python3 $S/scripts/clipper.py setup                      # once: speech model, ~650 MB
+python3 $S/scripts/clipper.py setup                      # once: speech model ~650 MB, sounds ~120 MB
 python3 $S/scripts/clipper.py analyze <video>            # -> work/<name>/
 python3 $S/scripts/clipper.py frame <video> <seconds>    # gridded frame, to locate a facecam
+python3 $S/scripts/clipper.py sfx <words>                # search the sound effects, e.g. sfx whoosh fast
 python3 $S/scripts/clipper.py render work/<name>/plan.json
 python3 $S/scripts/clipper.py check  work/<name>/plan.json
 ```
@@ -107,6 +108,36 @@ Optional per clip: `hook_style` (`"box"` = black text on a white box), `hook_sec
 `captions` (`false` to turn off), `caption_y` / `hook_y` (0-1, vertical position),
 `words` (hand-corrected captions: `[{"w": "word", "s": 0.4, "e": 0.7}]`, times from clip start).
 
+### Sound effects
+
+`setup` installs SFX Kit: 320 sound effects under CC0 (free for any use, no credit). Add them
+per clip, where `t` is the second of the clip on which the sound's sync point must land:
+
+```json
+"sfx": [
+  {"t": 0.0,  "id": "pop-medium-in"},
+  {"t": 14.2, "id": "boom-hit-medium"},
+  {"t": 9.5,  "id": "riser-2s-soft", "gain_db": -8}
+]
+```
+
+Find ids with `sfx <words>`. The usual picks for a gameplay clip:
+
+| on screen | sound |
+|---|---|
+| the hook appears (`t: 0`) | `pop-medium-in`, `whoosh-fast-soft` |
+| the payoff: crash, landing, explosion, punchline | `boom-hit-medium`, `impact-deep-hard`, `cinematic-drum-big` |
+| the two seconds before the payoff | `riser-2s-soft` (its sync point is its end: give the payoff's time) |
+| a fail | `notification-failure-knock`, `notification-error-soft` |
+| a win, a clean getaway | `notification-success-chime`, `celebration-popper` |
+| money, a robbery payout | `money-register`, `money-coin-drop` |
+| a glitch or a bug | `digital-glitch-clear` |
+
+Rules: at most 3-4 per clip, and each one on a visible event, timed from the contact sheet or
+the transcript. The game audio stays the lead: a crash that is already loud in the game does not
+need a boom on top. Default level sits under the voice; change it with `gain_db`. If unsure
+whether a sound helps, leave it out.
+
 Before rendering, read the transcript of each clip. If a name or a GTA term is misheard
 (Vice City, Leonida, Lucia, Jason), fix it in `transcript.json` or pass `words`.
 
@@ -136,6 +167,7 @@ Give the user, per clip: the file path, the hook, a title and a caption with 3-5
   If a candidate is a cutscene, skip it and say so.
 - **Music.** In-game radio is licensed music and gets claimed. Prefer moments with the radio off;
   if a song is clearly audible, warn the user. Never add a music track the user did not supply.
+  Sound effects come only from the installed CC0 library, never from meme-sound sites.
 - **No fake views, no misleading titles.** Campaigns verify views and cancel the payout.
 
 ## Limits to tell the user about when they matter
@@ -146,4 +178,5 @@ Give the user, per clip: the file path, the hook, a title and a caption with 3-5
   If the user knows a timestamp, put it in the plan directly.
 - The crop is fixed per clip. It does not follow a subject that moves across the screen: use
   `fit`, or split the moment into two clips with different `crop_x`.
-- No added music, sound effects or zooms.
+- No added music and no zooms. Sound effects are placed by time, not detected: a wrong `t`
+  puts the sound off the action, so listen-check is the user's job (you cannot hear the result).

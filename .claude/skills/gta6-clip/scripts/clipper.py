@@ -5,6 +5,7 @@ Subcommands
   setup    install the speech model (one time, ~650 MB)
   analyze  score every second, transcribe, list clip candidates + contact sheets
   frame    export one frame with a 10x10 grid (to locate a facecam)
+  sfx      search the sound-effect library (SFX Kit, CC0)
   render   cut, reframe, caption and export the clips described in a plan.json
   check    verify exported clips and lint hooks
 
@@ -29,6 +30,8 @@ FONT_DIR = SKILL_DIR / "assets" / "fonts"
 CACHE = Path(os.environ.get("GTA6_CLIP_CACHE", Path.home() / ".cache" / "gta6-clip"))
 MODEL_NAME = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
 MODEL_URL = f"https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/{MODEL_NAME}.tar.bz2"
+SFX_REPO = "https://github.com/wyzowl/sfx-kit.git"   # 320 sounds, CC0
+SFX_DIR = CACHE / "sfx-kit"
 VAD_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
 
 OUT_W, OUT_H = 1080, 1920
@@ -127,7 +130,38 @@ def cmd_setup(_args) -> None:
         with tarfile.open(tmp) as tf:
             tf.extractall(CACHE)
         tmp.unlink()
+    if not (SFX_DIR / "sounds.json").exists():
+        print("downloading sound effects (SFX Kit, CC0, ~120 MB) ...")
+        p = subprocess.run(["git", "clone", "-q", "--depth", "1", SFX_REPO, str(SFX_DIR)],
+                           capture_output=True, text=True)
+        if p.returncode != 0:
+            print(f"WARNING: sound effects not installed ({p.stderr.strip()[-200:]}). Clips still render without them.")
     print(f"ready: {CACHE}")
+
+
+# ----------------------------------------------------------------------------- sfx
+
+def load_sfx() -> dict:
+    f = SFX_DIR / "sounds.json"
+    if not f.exists():
+        return {}
+    return {x["id"]: x for x in json.loads(f.read_text())["sounds"]}
+
+
+def cmd_sfx(args) -> None:
+    lib = load_sfx()
+    if not lib:
+        die("sound effects not installed. Run: clipper.py setup")
+    terms = [t.lower() for t in args.query]
+    n = 0
+    for x in lib.values():
+        hay = " ".join([x["id"], x["category"], x.get("description", ""), " ".join(x.get("tags", [])),
+                        " ".join(x.get("use_for", []))]).lower()
+        if all(t in hay for t in terms):
+            n += 1
+            print(f"{x['id']:<34} {x['category']:<20} {x['duration']:>5.2f}s  sync {x['sync']['at']:.2f}s  "
+                  f"{x.get('description', '')[:90]}")
+    print(f"{n} sounds" + ("" if terms else "  (add words to filter, e.g. `sfx whoosh fast`)"))
 
 
 # ------------------------------------------------------------------------- analyze
@@ -561,6 +595,7 @@ def cmd_render(args) -> None:
     tmp.mkdir(exist_ok=True)
     shutil.copy(FONT_DIR / "Montserrat-Black.ttf", tmp / "Montserrat-Black.ttf")
     fps = min(60, round(meta["fps"]) or 30)
+    sfx_lib = load_sfx()
     done = []
     for clip in plan["clips"]:
         start, end = float(clip["start"]), min(float(clip["end"]), meta["duration"])
@@ -581,14 +616,31 @@ def cmd_render(args) -> None:
         out = out_dir / name
         cmd = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", str(video)]
         if meta["has_audio"]:
-            graph += ";[0:a]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[aout]"
+            graph += ";[0:a]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000,aformat=channel_layouts=stereo[base]"
         else:
             cmd += ["-f", "lavfi", "-t", f"{dur:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
-        cmd += ["-filter_complex", graph, "-map", "[vout]", "-map", "[aout]" if meta["has_audio"] else "1:a",
+            graph += ";[1:a]anull[base]"
+        n_in = 1 if meta["has_audio"] else 2
+        mix = ["[base]"]
+        for k, fx in enumerate(clip.get("sfx") or []):
+            snd = sfx_lib.get(fx["id"]) or die(f"clip {clip.get('id')}: unknown sound '{fx['id']}' (see `sfx`)")
+            # the sound's sync point lands on fx["t"]; a sound that would start before 0 is trimmed
+            lead = float(fx["t"]) - snd["sync"]["at"]
+            gain = float(fx.get("gain_db", snd.get("under_voiceover_db") or -4))
+            cmd += ["-i", str(SFX_DIR / snd["file"])]
+            graph += (f";[{n_in + k}:a]atrim=start={max(0.0, -lead):.3f},asetpts=PTS-STARTPTS,aresample=48000,"
+                      f"aformat=channel_layouts=stereo,volume={gain}dB,adelay={int(max(0.0, lead) * 1000)}:all=1[s{k}]")
+            mix.append(f"[s{k}]")
+        if len(mix) > 1:
+            graph += f";{''.join(mix)}amix=inputs={len(mix)}:normalize=0:duration=first,alimiter=limit=0.71:level=0[aout]"
+        else:
+            graph += ";[base]anull[aout]"
+        cmd += ["-filter_complex", graph, "-map", "[vout]", "-map", "[aout]",
                 "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-t", f"{dur:.3f}", str(out)]
         run(cmd, cwd=tmp)
-        print(f"rendered {out}  ({dur:.1f}s, {clip.get('layout', 'focus')}, {len(words)} caption words)")
+        print(f"rendered {out}  ({dur:.1f}s, {clip.get('layout', 'focus')}, {len(words)} caption words, "
+              f"{len(clip.get('sfx') or [])} sound effects)")
         done.append(str(out))
     (out_dir / "rendered.json").write_text(json.dumps({"plan": str(plan_path), "files": done}, indent=1))
     shutil.rmtree(tmp)
@@ -634,6 +686,12 @@ def cmd_check(args) -> None:
                 warns.append(f"{tag}: hook is {len(hook)} characters, hard to read in 2 seconds")
             if hook.isupper() and len(hook) > 12:
                 warns.append(f"{tag}: all-caps hook (measured at 0.90x), prefer normal capitals")
+        fx = clip.get("sfx") or []
+        for x in fx:
+            if not 0 <= float(x["t"]) <= want:
+                problems.append(f"{tag}: sound '{x['id']}' at {x['t']}s is outside the clip")
+        if len(fx) > 4:
+            warns.append(f"{tag}: {len(fx)} sound effects, more than 4 starts to bury the game audio")
         sheet = out_dir / f"qc_{int(clip['id']):02d}.jpg"
         ts = [0.6, m["duration"] / 2, max(0.6, m["duration"] - 0.6)]
         sel = "+".join(f"eq(n,{int(t * m['fps'])})" for t in ts)
@@ -670,6 +728,9 @@ def main() -> None:
     f.add_argument("time", type=float)
     f.add_argument("--out")
     f.set_defaults(fn=cmd_frame)
+    x = sub.add_parser("sfx")
+    x.add_argument("query", nargs="*", help="words to filter on, e.g. whoosh fast")
+    x.set_defaults(fn=cmd_sfx)
     r = sub.add_parser("render")
     r.add_argument("plan")
     r.set_defaults(fn=cmd_render)

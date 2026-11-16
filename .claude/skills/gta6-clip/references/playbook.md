@@ -102,6 +102,34 @@ Licensed radio music triggers Content ID claims. Turn the radio off while record
 - Risks reported: budgets running out before views are verified, disputed view counts, payouts
   cancelled for fake views or banned accounts.
 
+## Sound effects and related open-source projects
+
+Searched 17 November 2026. Reddit could not be read from the build session (blocked for search
+and for direct access), so this list comes from GitHub and the open web, not from Reddit threads.
+
+Sound libraries:
+
+| project | what | licence | status |
+|---|---|---|---|
+| wyzowl/sfx-kit | 320 effects in 28 categories, each with a sync point, loudness and usage notes | CC0 | installed by `setup`, used by `render` |
+| romainsimon/uisfx | 936 short interface sounds in 12 packs (MP3/Ogg) | audio CC0, code MIT | not installed: app-interface sounds, little use on gameplay |
+| crafter-station/elements | 17 effects | CC0 (as reported) | not installed: too small to add anything |
+| OpenGameArt (Kenney interface sounds and others) | game UI packs | CC0 per pack | not installed: site not reachable from the build session |
+
+Clipping projects worth reading for ideas (none of their code is used here):
+
+| project | idea to borrow |
+|---|---|
+| R3LAMP4GO/clipping-gta-6 | GTA-specific scoring, hook data, live stream recording |
+| FujiwaraChoki/supoclip | face-aware vertical crop |
+| mutonby/openshorts | moment detection, dubbing, direct publishing (MIT) |
+| ClipsAI/clipsai | speaker-following reframing as a library |
+| Shaarav4795/ClippedAI | LLM-written titles on top of clipsai |
+| fralapo/clippyme | active-speaker reframing, self-hosted |
+
+Meme sounds (vine boom, "bruh", TikTok sounds) are not in any of these and are not free to use:
+do not download them from soundboard sites.
+
 ## Sources
 
 - https://github.com/R3LAMP4GO/clipping-gta-6 (pipeline design, scoring weights, hook data; AGPL-3.0, no code copied)
@@ -115,3 +143,8 @@ Licensed radio music triggers Content ID claims. Turn the radio off while record
 - https://neonbay.gg/news/rockstar-gta-6-spoiler-videos-takedown
 - https://openclip.app/compare/whop-vs-vyro
 - https://www.clipspeed.ai/blog/vyro-clipping-platform-mrbeast-guide.html
+- https://github.com/wyzowl/sfx-kit
+- https://github.com/romainsimon/uisfx
+- https://github.com/FujiwaraChoki/supoclip
+- https://github.com/ClipsAI/clipsai
+- https://github.com/Shaarav4795/ClippedAI
